@@ -1,6 +1,13 @@
+import gym
 import numpy as np
 from gym import spaces
-from stable_baselines.common.vec_env import VecEnv
+
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv, VecEnvWrapper, VecEnvIndices, VecEnvObs, VecEnvStepReturn
+from stable_baselines3.common.vec_env.util import copy_obs_dict, dict_to_obs, obs_space_info
+
+from collections import OrderedDict
+from copy import deepcopy
+from typing import Any, Callable, List, Optional, Sequence, Type, Union
 
 
 class FlightEnvVec(VecEnv):
@@ -27,6 +34,7 @@ class FlightEnvVec(VecEnv):
         self.rewards = [[] for _ in range(self.num_envs)]
 
         self.max_episode_steps = 300
+
 
     def seed(self, seed=0):
         self.wrapper.setSeed(seed)
@@ -129,32 +137,26 @@ class FlightEnvVec(VecEnv):
     def step_wait(self):
         raise RuntimeError('This method is not implemented')
 
-    def get_attr(self, attr_name, indices=None):
-        """
-        Return attribute from vectorized environment.
-        :param attr_name: (str) The name of the attribute whose value to return
-        :param indices: (list,int) Indices of envs to get attribute from
-        :return: (list) List of values of 'attr_name' in all environments
-        """
-        raise RuntimeError('This method is not implemented')
+    def get_attr(self, attr_name: str, indices: VecEnvIndices = None) -> List[Any]:
+        """Return attribute from vectorized environment (see base class)."""
+        target_envs = self._get_target_envs(indices)
+        return [getattr(env_i, attr_name) for env_i in target_envs]
 
-    def set_attr(self, attr_name, value, indices=None):
-        """
-        Set attribute inside vectorized environments.
-        :param attr_name: (str) The name of attribute to assign new value
-        :param value: (obj) Value to assign to `attr_name`
-        :param indices: (list,int) Indices of envs to assign value
-        :return: (NoneType)
-        """
-        raise RuntimeError('This method is not implemented')
+    def set_attr(self, attr_name: str, value: Any, indices: VecEnvIndices = None) -> None:
+        """Set attribute inside vectorized environments (see base class)."""
+        target_envs = self._get_target_envs(indices)
+        for env_i in target_envs:
+            setattr(env_i, attr_name, value)
 
-    def env_method(self, method_name, *method_args, indices=None, **method_kwargs):
-        """
-        Call instance methods of vectorized environments.
-        :param method_name: (str) The name of the environment method to invoke.
-        :param indices: (list,int) Indices of envs whose method to call
-        :param method_args: (tuple) Any positional arguments to provide in the call
-        :param method_kwargs: (dict) Any keyword arguments to provide in the call
-        :return: (list) List of items returned by the environment's method call
-        """
-        raise RuntimeError('This method is not implemented')
+    def env_method(self, method_name: str, *method_args, indices: VecEnvIndices = None, **method_kwargs) -> List[Any]:
+        """Call instance methods of vectorized environments."""
+        target_envs = self._get_target_envs(indices)
+        return [getattr(env_i, method_name)(*method_args, **method_kwargs) for env_i in target_envs]
+
+    def env_is_wrapped(self, wrapper_class: Type[gym.Wrapper], indices: VecEnvIndices = None) -> List[bool]:
+        """Check if worker environments are wrapped with a given wrapper"""
+        target_envs = self._get_target_envs(indices)
+        # Import here to avoid a circular import
+        from stable_baselines3.common import env_util
+
+        return [env_util.is_wrapped(env_i, wrapper_class) for env_i in target_envs]
